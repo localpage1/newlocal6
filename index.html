@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>滚动与缩放的图片浏览</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            width: 100vw;
+        }
+
+        .split {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .top, .bottom {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            width: 100%;
+        }
+
+        .image-container {
+            padding: 0;
+            margin: 0;
+        }
+
+        .image {
+            display: block;
+            position: relative;
+            left: 50%;
+            transform: translateX(-50%);
+            transition: transform 0.1s ease-out;
+            margin: 0;
+        }
+
+        .slider-container {
+            position: fixed;
+            width: 90%;
+            max-width: 500px;
+            padding: 15px;
+        }
+
+        .slider {
+            width: 100%;
+        }
+
+        .slider-top {
+            bottom: 70px;
+        }
+
+        .slider-bottom {
+            bottom: 10px;
+        }
+
+        /* 悬浮窗样式 */
+        /.scroll-indicator {
+            position: fixed;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 1000;
+        }
+
+        .scroll-top {
+            top: 10px;
+        }
+
+        .scroll-bottom {
+            bottom: 10px;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="split">
+        <div class="top" id="top">
+            <div class="image-container" id="image-container-top"></div>
+        </div>
+
+        <div class="bottom" id="bottom">
+            <div class="image-container" id="image-container-bottom"></div>
+        </div>
+    </div>
+
+    <div class="slider-container slider-top">
+        <input type="range" min="100" max="150" value="100" class="slider" id="slider-top">
+    </div>
+
+    <div class="slider-container slider-bottom">
+        <input type="range" min="100" max="150" value="100" class="slider" id="slider-bottom">
+    </div>
+
+    <!-- 滚动比值悬浮窗 -->
+    <div class="scroll-indicator scroll-top" id="scroll-top-indicator">滚动比例: 0.0000</div>
+    <div class="scroll-indicator scroll-bottom" id="scroll-bottom-indicator">滚动比例: 0.0000</div>
+
+    <script>
+        let lockedScrollRatioTop = null;
+        let lockedScrollRatioBottom = null;
+
+        function updateImageTransform(container, slider, isTop) {
+            const width = window.innerWidth;
+            const images = container.querySelectorAll('.image');
+            const scrollContainer = isTop ? document.getElementById('top') : document.getElementById('bottom');
+
+            // 使用锁定的滚动比值
+            let scrollRatio = isTop ? lockedScrollRatioTop : lockedScrollRatioBottom;
+
+            if (scrollRatio !== null) {
+                scrollRatio = parseFloat(scrollRatio).toFixed(4);
+            }
+
+            const imageWidth = (slider.value / 100) * width;
+            images.forEach(image => {
+                image.style.width = `${imageWidth}px`;
+            });
+
+            if (scrollRatio !== null) {
+                requestAnimationFrame(() => {
+                    scrollContainer.scrollTop = scrollRatio * (scrollContainer.scrollHeight - scrollContainer.clientHeight);
+                });
+            }
+        }
+
+        function updateScrollIndicators() {
+            const top = document.getElementById('top');
+            const bottom = document.getElementById('bottom');
+
+            const topRatio = (top.scrollTop / (top.scrollHeight - top.clientHeight)).toFixed(4);
+            const bottomRatio = (bottom.scrollTop / (bottom.scrollHeight - bottom.clientHeight)).toFixed(4);
+
+            document.getElementById('scroll-top-indicator').textContent = `滚动比例: ${topRatio}`;
+            document.getElementById('scroll-bottom-indicator').textContent = `滚动比例: ${bottomRatio}`;
+        }
+
+        function lockScrollRatio(isTop) {
+            const scrollContainer = isTop ? document.getElementById('top') : document.getElementById('bottom');
+            const ratio = (scrollContainer.scrollTop / (scrollContainer.scrollHeight - scrollContainer.clientHeight)).toFixed(4);
+            
+            if (isTop) {
+                lockedScrollRatioTop = ratio;
+            } else {
+                lockedScrollRatioBottom = ratio;
+            }
+        }
+
+        function unlockScrollRatio(isTop) {
+            if (isTop) {
+                lockedScrollRatioTop = null;
+            } else {
+                lockedScrollRatioBottom = null;
+            }
+        }
+
+        window.onload = function() {
+            document.getElementById('top').scrollTop = localStorage.getItem('topScroll') || 0;
+            document.getElementById('bottom').scrollTop = localStorage.getItem('bottomScroll') || 0;
+
+            document.getElementById('slider-top').value = localStorage.getItem('sliderTopValue') || 125;
+            document.getElementById('slider-bottom').value = localStorage.getItem('sliderBottomValue') || 125;
+
+            updateImageTransform(document.getElementById('image-container-top'), document.getElementById('slider-top'), true);
+            updateImageTransform(document.getElementById('image-container-bottom'), document.getElementById('slider-bottom'), false);
+            updateScrollIndicators();
+
+            // 恢复滑块的显示/隐藏状态
+            const slidersHidden = localStorage.getItem('slidersHidden') === 'true';
+            if (slidersHidden) {
+                document.querySelectorAll('.slider-container').forEach(slider => {
+                    slider.classList.add('hidden');
+                });
+            }
+        };
+
+        document.getElementById('top').onscroll = function() {
+            localStorage.setItem('topScroll', this.scrollTop);
+            updateScrollIndicators();
+        };
+
+        document.getElementById('bottom').onscroll = function() {
+            localStorage.setItem('bottomScroll', this.scrollTop);
+            updateScrollIndicators();
+        };
+
+        document.getElementById('slider-top').addEventListener('touchstart', function() {
+            lockScrollRatio(true);
+        });
+
+        document.getElementById('slider-bottom').addEventListener('touchstart', function() {
+            lockScrollRatio(false);
+        });
+
+        document.getElementById('slider-top').addEventListener('input', function() {
+            localStorage.setItem('sliderTopValue', this.value);
+            updateImageTransform(document.getElementById('image-container-top'), this, true);
+        });
+
+        document.getElementById('slider-bottom').addEventListener('input', function() {
+            localStorage.setItem('sliderBottomValue', this.value);
+            updateImageTransform(document.getElementById('image-container-bottom'), this, false);
+        });
+
+        document.getElementById('slider-top').addEventListener('touchend', function() {
+            unlockScrollRatio(true);
+        });
+
+        document.getElementById('slider-bottom').addEventListener('touchend', function() {
+            unlockScrollRatio(false);
+        });
+
+        function createImages(container, prefix, count) {
+            for (let i = 1; i <= count; i++) {
+                const img = document.createElement('img');
+                img.src = `${prefix}-${i}.jpeg`;
+                img.alt = `Image ${i}`;
+                img.className = 'image';
+                container.appendChild(img);
+            }
+        }
+
+        createImages(document.getElementById('image-container-top'), 'k05', 289);
+        createImages(document.getElementById('image-container-bottom'), 'Hidan no Aria vol.05', 264);
+
+        // 触摸事件：五指触摸 5 秒立即隐藏或展开滑块
+        let touchStartTime = null;
+        let touchCount = 0;
+        let touchTimer = null;
+
+        function handleTouchStart(event) {
+            touchCount = event.touches.length;
+
+            if (touchCount === 5 && !touchStartTime) {
+                touchStartTime = Date.now();
+                // 启动计时器
+                touchTimer = setTimeout(() => {
+                    toggleSliders(); // 5秒后切换显示/隐藏滑块
+                }, 5000); // 5000ms = 5秒
+            }
+        }
+
+        function handleTouchEnd() {
+            if (touchCount === 5 && touchStartTime) {
+                clearTimeout(touchTimer); // 如果在5秒内松开，则取消定时器
+                touchStartTime = null;
+            }
+        }
+
+        function toggleSliders() {
+            const sliders = document.querySelectorAll('.slider-container');
+            sliders.forEach(slider => {
+                slider.classList.toggle('hidden');
+            });
+
+            // 存储滑块的隐藏状态
+            const slidersHidden = document.querySelector('.slider-container').classList.contains('hidden');
+            localStorage.setItem('slidersHidden', slidersHidden);
+        }
+
+        document.body.addEventListener('touchstart', handleTouchStart);
+        document.body.addEventListener('touchend', handleTouchEnd);
+        document.body.addEventListener('touchmove', handleTouchStart); // 触摸移动时保持计时
+
+        // 禁用滑块轨道点击事件，强制用户拖动滑块
+        document.getElementById('slider-top').addEventListener('click', function(event) {
+            event.preventDefault();
+        });
+
+        document.getElementById('slider-bottom').addEventListener('click', function(event) {
+            event.preventDefault();
+        });
+
+        // 禁用轨道点击事件，强制用户拖动滑块
+        document.getElementById('slider-top').addEventListener('mousedown', function(event) {
+            // 仅允许拖动滑块，不允许点击轨道
+            event.preventDefault();
+        });
+
+        document.getElementById('slider-bottom').addEventListener('mousedown', function(event) {
+            // 仅允许拖动滑块，不允许点击轨道
+            event.preventDefault();
+        });
+    </script>
+</body>
+</html>
