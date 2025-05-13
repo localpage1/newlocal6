@@ -60,8 +60,7 @@
             bottom: 10px;
         }
 
-        /* 悬浮窗样式 */
-        /.scroll-indicator {
+        .scroll-indicator {
             position: fixed;
             left: 10px;
             background: rgba(0, 0, 0, 0.6);
@@ -104,22 +103,90 @@
         <input type="range" min="100" max="150" value="100" class="slider" id="slider-bottom">
     </div>
 
-    <!-- 滚动比值悬浮窗 -->
-    <div class="scroll-indicator scroll-top" id="scroll-top-indicator">滚动比例: 0.0000</div>
-    <div class="scroll-indicator scroll-bottom" id="scroll-bottom-indicator">滚动比例: 0.0000</div>
+    <div class="scroll-indicator scroll-top" id="scroll-top-indicator" hidden>滚动比例: 0.0000</div>
+    <div class="scroll-indicator scroll-bottom" id="scroll-bottom-indicator" hidden>滚动比例: 0.0000</div>
 
     <script>
         let lockedScrollRatioTop = null;
         let lockedScrollRatioBottom = null;
+
+        function createImagesFromIndexedDB(container, fileNames) {
+            return new Promise((resolve) => {
+                const request = indexedDB.open('SDB', 8);
+                let loadedCount = 0;
+                const total = fileNames.length;
+
+                request.onsuccess = function(event) {
+                    const db = event.target.result;
+                    const transaction = db.transaction(['store'], 'readonly');
+                    const store = transaction.objectStore('store');
+
+                    if (total === 0) {
+                        resolve();
+                        return;
+                    }
+
+                    fileNames.forEach(fileName => {
+                        const getReq = store.get(fileName);
+                        getReq.onsuccess = function(e) {
+                            const blob = e.target.result;
+                            if (blob instanceof Blob) {
+                                const img = new Image();
+                                img.onload = () => {
+                                    if (++loadedCount === total) resolve();
+                                };
+                                img.src = URL.createObjectURL(blob);
+                                img.className = 'image';
+                                container.appendChild(img);
+                            } else {
+                                console.warn(`未找到文件: ${fileName}`);
+                                if (++loadedCount === total) resolve();
+                            }
+                        };
+                        getReq.onerror = function () {
+                            console.error(`读取失败: ${fileName}`);
+                            if (++loadedCount === total) resolve();
+                        };
+                    });
+                };
+            });
+        }
+
+        async function init() {
+            const topFileNames = Array.from({ length: 246 }, (_, i) => `Unknown-${i + 1}.jpeg`);
+            const bottomFileNames = Array.from({ length: 237 }, (_, i) => `Hidan no Aria vol.06-${i + 1}.png`);
+
+            await Promise.all([
+                createImagesFromIndexedDB(document.getElementById('image-container-top'), topFileNames),
+                createImagesFromIndexedDB(document.getElementById('image-container-bottom'), bottomFileNames)
+            ]);
+
+            document.getElementById('top').scrollTop = localStorage.getItem('topScroll') || 0;
+            document.getElementById('bottom').scrollTop = localStorage.getItem('bottomScroll') || 0;
+
+            document.getElementById('slider-top').value = localStorage.getItem('sliderTopValue') || 125;
+            document.getElementById('slider-bottom').value = localStorage.getItem('sliderBottomValue') || 125;
+
+            updateImageTransform(document.getElementById('image-container-top'), document.getElementById('slider-top'), true);
+            updateImageTransform(document.getElementById('image-container-bottom'), document.getElementById('slider-bottom'), false);
+            updateScrollIndicators();
+
+            const slidersHidden = localStorage.getItem('slidersHidden') === 'true';
+            if (slidersHidden) {
+                document.querySelectorAll('.slider-container').forEach(slider => {
+                    slider.classList.add('hidden');
+                });
+            }
+        }
+
+        window.onload = init;
 
         function updateImageTransform(container, slider, isTop) {
             const width = window.innerWidth;
             const images = container.querySelectorAll('.image');
             const scrollContainer = isTop ? document.getElementById('top') : document.getElementById('bottom');
 
-            // 使用锁定的滚动比值
             let scrollRatio = isTop ? lockedScrollRatioTop : lockedScrollRatioBottom;
-
             if (scrollRatio !== null) {
                 scrollRatio = parseFloat(scrollRatio).toFixed(4);
             }
@@ -166,26 +233,6 @@
             }
         }
 
-        window.onload = function() {
-            document.getElementById('top').scrollTop = localStorage.getItem('topScroll') || 0;
-            document.getElementById('bottom').scrollTop = localStorage.getItem('bottomScroll') || 0;
-
-            document.getElementById('slider-top').value = localStorage.getItem('sliderTopValue') || 125;
-            document.getElementById('slider-bottom').value = localStorage.getItem('sliderBottomValue') || 125;
-
-            updateImageTransform(document.getElementById('image-container-top'), document.getElementById('slider-top'), true);
-            updateImageTransform(document.getElementById('image-container-bottom'), document.getElementById('slider-bottom'), false);
-            updateScrollIndicators();
-
-            // 恢复滑块的显示/隐藏状态
-            const slidersHidden = localStorage.getItem('slidersHidden') === 'true';
-            if (slidersHidden) {
-                document.querySelectorAll('.slider-container').forEach(slider => {
-                    slider.classList.add('hidden');
-                });
-            }
-        };
-
         document.getElementById('top').onscroll = function() {
             localStorage.setItem('topScroll', this.scrollTop);
             updateScrollIndicators();
@@ -222,20 +269,6 @@
             unlockScrollRatio(false);
         });
 
-        function createImages(container, prefix, count) {
-            for (let i = 1; i <= count; i++) {
-                const img = document.createElement('img');
-                img.src = `${prefix}-${i}.jpeg`;
-                img.alt = `Image ${i}`;
-                img.className = 'image';
-                container.appendChild(img);
-            }
-        }
-
-        createImages(document.getElementById('image-container-top'), 'Unknown', 246);
-        createImages(document.getElementById('image-container-bottom'), 'Hidan no Aria vol.06', 237);
-
-        // 触摸事件：五指触摸 5 秒立即隐藏或展开滑块
         let touchStartTime = null;
         let touchCount = 0;
         let touchTimer = null;
@@ -245,16 +278,15 @@
 
             if (touchCount === 5 && !touchStartTime) {
                 touchStartTime = Date.now();
-                // 启动计时器
                 touchTimer = setTimeout(() => {
-                    toggleSliders(); // 5秒后切换显示/隐藏滑块
-                }, 5000); // 5000ms = 5秒
+                    toggleSliders();
+                }, 5000);
             }
         }
 
         function handleTouchEnd() {
             if (touchCount === 5 && touchStartTime) {
-                clearTimeout(touchTimer); // 如果在5秒内松开，则取消定时器
+                clearTimeout(touchTimer);
                 touchStartTime = null;
             }
         }
@@ -265,34 +297,18 @@
                 slider.classList.toggle('hidden');
             });
 
-            // 存储滑块的隐藏状态
             const slidersHidden = document.querySelector('.slider-container').classList.contains('hidden');
             localStorage.setItem('slidersHidden', slidersHidden);
         }
 
         document.body.addEventListener('touchstart', handleTouchStart);
         document.body.addEventListener('touchend', handleTouchEnd);
-        document.body.addEventListener('touchmove', handleTouchStart); // 触摸移动时保持计时
+        document.body.addEventListener('touchmove', handleTouchStart);
 
-        // 禁用滑块轨道点击事件，强制用户拖动滑块
-        document.getElementById('slider-top').addEventListener('click', function(event) {
-            event.preventDefault();
-        });
-
-        document.getElementById('slider-bottom').addEventListener('click', function(event) {
-            event.preventDefault();
-        });
-
-        // 禁用轨道点击事件，强制用户拖动滑块
-        document.getElementById('slider-top').addEventListener('mousedown', function(event) {
-            // 仅允许拖动滑块，不允许点击轨道
-            event.preventDefault();
-        });
-
-        document.getElementById('slider-bottom').addEventListener('mousedown', function(event) {
-            // 仅允许拖动滑块，不允许点击轨道
-            event.preventDefault();
-        });
+        document.getElementById('slider-top').addEventListener('click', e => e.preventDefault());
+        document.getElementById('slider-bottom').addEventListener('click', e => e.preventDefault());
+        document.getElementById('slider-top').addEventListener('mousedown', e => e.preventDefault());
+        document.getElementById('slider-bottom').addEventListener('mousedown', e => e.preventDefault());
     </script>
 </body>
 </html>
